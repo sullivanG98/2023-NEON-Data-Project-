@@ -3,6 +3,6 @@ Welcome to the 2023-NEON-Data-Project- wiki! This semester will be the first yea
 
 After completing the NEON data project you will:
 
-Understand how to access and use NEON data and what types of questions we can ask with these data.
-Be able to conduct data carpentry, run statistical analyses (t-test, ANOVA, and linear regression), and make visualizations (bar plots, box plots, and line plots) using RStudio.
-Gain experience collaborating on scientific projects by working with your peers on data synthesis and presentation.
+- Understand how to access and use NEON data and what types of questions we can ask with these data.
+- Be able to conduct data carpentry, run statistical analyses (t-test, ANOVA, and linear regression), and make visualizations (bar plots, box plots, and line plots) using RStudio.
+- Gain experience collaborating on scientific projects by working with your peers on data synthesis and presentation.
