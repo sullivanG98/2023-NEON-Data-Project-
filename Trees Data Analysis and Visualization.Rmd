@@ -1,0 +1,177 @@
+---
+title: "Trees Data Analysis and Visualization"
+output: html_document
+---
+
+This R markdown file will guide you through data carpentry for the trees data. 
+
+BEFORE YOU BEGIN:
+
+1. SAVE THIS FILE to your computer! Be sure to save your work periodically.
+
+2. Set your working directory to the folder where you saved this Rmd file
+
+3. Run the following chunk, which has the packages you will need
+```{r libraries }
+
+library(neonUtilities)
+library(tidyverse)
+library(lubridate)
+
+```
+
+
+*Step 1.* Read in the csv files for the trees data. These are the files that you uploaded to eLC for your pre-lab. For trees data carpentry, you will need to upload:
+
+- variables_10098: this file contains definitions for all the variables in the trees data. Reference this if you're not sure what a column name means
+
+- vst_apparentindividual: this file contains tree measurements
+
+- vst_perplotperyear: this file contains plot type and plot area
+```{r bring in data}
+vst_apparentindividual <- read.csv("vst_apparentindividual.csv")
+vst_perplotperyear <- read.csv("vst_perplotperyear.csv")
+variables_10098 <- read.csv("NEON Metadata Trees.csv")
+
+```
+
+
+*Step 2* 
+(a) Make a new dataframe where you select the variables (columns) that you need from vst_perplotperyear. The columns you will need are: date, domainID, siteID, plotID, plotType, nlcdClass, totalSampledAreaTrees
+
+(b) Make a new column in the new dataframe from (a) that contains only the *year* from the date column
+
+(c) Filter the new dataframe for only the most recent sampling year for each *plot*.
+
+*If you have questions about what any of these columns are, refer to the "variables" df*
+
+```{r Selecting and generating variables}
+plot.data <- vst_perplotperyear %>%
+  select(date, domainID, siteID, plotID, plotType, nlcdClass, totalSampledAreaTrees)
+
+plot.data <- plot.data %>% mutate(year=year(date))
+
+plot.data.recent.year <- plot.data %>% 
+  group_by(plotID) %>%
+  filter(year==max(year))
+```
+
+*Step 3*
+(a) Make a new dataframe where you select the variables (columns) that you need from vst_apparentindividual. The columns you will need are: date, siteID, plotID, individualID, growthForm, stemDiameter, plantStatus
+
+(b) Make a new column in the new dataframe from (a) that contains only the *year* from the date column
+
+(c) Filter the new dataframe for only the most recent sampling year for each *individual tree*.
+
+(d) Filter the new dataframe for only the most recent sampling year for live trees only.
+
+(e) Filter the new dataframe for single bole trees, multi-bole trees, and small trees only.
+
+(f) Some trees have a stem diameter of "NA". Filter the data such that you only have trees with a stem diameter greater than zero.
+```{r Data wrangling}
+individual.data <- vst_apparentindividual %>% 
+  select(date, siteID, plotID, individualID, growthForm, stemDiameter, plantStatus)
+
+individual.data <- individual.data %>% 
+  mutate(year=year(date))
+
+indvidual.data.recent.year <- individual.data %>%
+  group_by(individualID) %>%
+  filter(year==max(year))
+
+indivdiaul.data.live <- indvidual.data.recent.year %>% filter(plantStatus=="Live")
+
+indivdiual.data.growthform <- indivdiaul.data.live %>% 
+  filter(growthForm=="single bole tree" | growthForm=="multi-bole tree" | growthForm=="small tree")
+
+individual.data.diameter <- indivdiual.data.growthform %>% 
+  filter(stemDiameter>0)
+```
+
+*Step 4* 
+(a) Join the plot info dataframe with the most recent live trees dataframe. 
+
+(b) Once joined, the rows that have plot area as NA are those where the year didn't match between dataframes (either because the plot area was missing for that year in that plot, or there was no tree data for that year in that plot. Remove the rows that have "NA" for plot area from your dataframe (recommend creating a new dataframe). Note how many trees you lost when you did this.
+```{r Joining dataframes}
+trees.all.data <- left_join(individual.data.diameter, plot.data.recent.year)
+
+trees.plot.individual <- trees.all.data %>%
+  group_by(totalSampledAreaTrees) %>%
+  drop_na(totalSampledAreaTrees)
+
+sum(is.na(trees.plot.individual$totalSampledAreaTrees))
+```
+
+
+*Step 5*: tree allometry and unit conversions
+(a) Use the mixed hardwood allometric equation from Jenkins et al. 2003 to create a new column in your joined dataframe that is equal to the biomass of each tree
+
+biomass = Exp(Bo + B1(ln(dbh)))
+
+where Bo = -2.4800, B1= 2.4835
+
+(b) Create a new dataframe that contains the total aboveground biomass of trees in each plot. You will want to retain teh columns siteID, plotID, and totalSampledAreaTrees in this new dataframe!!
+
+(c) In the dataframe from (b), create a new column that is the aboveground biomass of trees in units of kg/m^2. Then, create another new column that is the aboveground biomass of trees in units of Mg/ha.
+```{r Doing more data wrangling}
+trees.plot.individual<- trees.plot.individual %>%
+  mutate(biomass=(exp(-2.48+2.4835*log(stemDiameter))))
+
+trees.biomass<-trees.plot.individual%>%group_by(siteID, plotID, totalSampledAreaTrees) %>%
+  summarise(plot.abg.biomass=sum(biomass))
+
+trees.biomass<-trees.biomass %>%
+  mutate(plot.abg.biomass.kg.m2=plot.abg.biomass/totalSampledAreaTrees)
+
+trees.biomass<-trees.biomass %>% 
+  mutate(plot.abg.biomass.Mg.ha=plot.abg.biomass.kg.m2*10*0.47)
+
+mean(trees.biomass$plot.abg.biomass.Mg.ha)
+```
+
+```{r Saving the cleaned data}
+write.csv(trees.biomass, "Tree Carbon by NEON Site.csv")
+```
+
+*Step 6*: In preparation for next week's data visualization lab, make a basic boxplot (no need to customize aesthetics - this is just to look at general patterns) for your trees data. In the chunk below, below the plot code, comment in some observations about the patterns you see in this plot.
+
+ANOVA and Tukey HSD
+```{r Statistical Analysis}
+model.tree.biomass<-aov(plot.abg.biomass.Mg.ha~siteID, data=trees.biomass)
+summary(model.tree.biomass)
+
+tukey<-TukeyHSD(model.tree.biomass)
+tukey
+```
+
+```{r Creating significant letters} 
+install.packages("multcompView")
+library(multcompView)
+cld <- multcompLetters4(model.tree.biomass, tukey)
+table <- group_by(trees.biomass, siteID) %>%
+  summarise(mean=mean(plot.abg.biomass.Mg.ha), 
+            quant=quantile(plot.abg.biomass.Mg.ha,probs=0.75)) %>%
+  arrange(desc(mean))
+
+cld<-as.data.frame.list(cld$siteID)
+table$cld<-cld$Letters
+print(table)
+```
+
+```{r Boxplot}
+trees.biomass %>%
+  ggplot(., aes(x=siteID, y=plot.abg.biomass.Mg.ha))+
+  geom_boxplot(aes(fill= siteID),show.legend=F, outlier.shape = NA, alpha = 0.6)+
+  geom_point(position = "jitter") + 
+  labs(title="Plot Level Tree Carbon Biomass (Mg C/ha) by Site", 
+       x="Site", 
+       y="Plot Level Tree Carbon Biomass (Mg C/ha)")+
+  geom_text(data=table, aes(label=cld, x=siteID, y=quant), vjust=-1, hjust=-1, size=3)+
+  scale_fill_brewer(palette = "Spectral") +
+  theme_bw() + 
+  theme(axis.title.y=element_text(size=7))
+
+
+```
+
+

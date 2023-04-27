@@ -1,0 +1,226 @@
+---
+title: "Soils Data Analysis and Visualization"
+output: html_document
+---
+
+This R markdown file will guide you through data carpentry for the soils data. 
+
+BEFORE YOU BEGIN:
+
+1. SAVE THIS FILE to your computer! Be sure to save your work periodically.
+
+2. Set your working directory to the folder where you saved this Rmd file
+```{r}
+#setwd()
+```
+
+3. Run the following chunk, which has the packages you will need
+```{r Libraries}
+
+library(neonUtilities)
+library(tidyverse)
+library(lubridate)
+library(multcompView)
+
+```
+
+
+*Step 1.* Read in the csv files for the soils data. These are the files that you uploaded to eLC for your pre-lab. For soils data carpentry, you need:
+
+- variables_10047: this file contains definitions for all the variables in the soils data. Reference this if you're not sure what a column name means/what the units are for a particular parameter.
+
+- spc_biogeochem: this file contains soil C data (carbonTot)
+
+- spc_bulkdensity: this file contains bulk density (bulkDensThirdBar)
+```{r Bringing in the data}
+Soil_BioGeoChem <- read_csv("Soil_BioGeoChem_NEON_Sullivan_Brugger.csv")
+Soil_BulkD <- read_csv("Soil_BulkDensity_NEON_Sullivan_Brugger.csv")
+
+```
+
+
+*Step 2* 
+(a) Select variables of interest from both spc_biogeochem and spc_bulk density. 
+
+- For spc_biogeochem, you will need the following columns: domainID, siteID, plotID, collectDate, horizonID, horizonName, biogeoTopDepth, biogeoBottomDepth, carbonTot. 
+
+- For spc_bulkdensity, you will need the following columns: domainID, siteID, plotID, collectDate, horizonID, horizonName, bulkDensThirdBar
+
+(b) Join the subsetted dataframes from (a). You want to retain all of the observations from spc_biogeochem, filling in bulk density values where they exist and, otherwise, filling in NA. If you need help remembering what type of join to use, refer to the lab 7 slides!
+```{r Joining dataframes}
+Soil_BioGeoChem <- Soil_BioGeoChem %>%
+   select(c(domainID, siteID, plotID, collectDate, horizonID, horizonName, biogeoTopDepth, biogeoBottomDepth, carbonTot))
+
+Soil_BulkD <- Soil_BulkD %>%
+  select(c(domainID, siteID, plotID, collectDate, horizonID, horizonName, bulkDensThirdBar))
+
+Soil_combined_BGC_BulkDensity <- left_join(Soil_BioGeoChem, Soil_BulkD)
+
+```
+
+*Step 3* 
+(a) Create a new column in your joined dataframe from step 2 that contains the depth for each horizon
+
+(b) For all bulk density calculations, we will use the data for the third bar bulk density method. In the dataframe, this column is called bulkDensThirdBar. Find the mean bulk density for all of your data and assign this value to an object called global.mean.bd
+
+(c) Next, calculate how many NA values you have for bulk density and comment this value below the line of code
+```{r Creating some new variables } 
+Soil_combined_BGC_BulkDensity <- Soil_combined_BGC_BulkDensity %>% 
+  mutate(horizon_depth = (biogeoBottomDepth - biogeoTopDepth))
+
+table(is.na(Soil_combined_BGC_BulkDensity$horizon_depth))
+         
+global.mean.bd <- mean(Soil_combined_BGC_BulkDensity$bulkDensThirdBar, na.rm= T)
+
+table(is.na(Soil_combined_BGC_BulkDensity$bulkDensThirdBar))
+
+# FALSE  TRUE 
+#    90   168 
+```
+
+
+*Step 4* There are many soil C data observations that do not have bulk density associated with them. We will use means at the plot, then the site, then the all-site levels to fill in these gaps.
+
+(a) First, add two new columns to your joined dataframe. The first column should be the mean bulk density value at the level of each plot (excluding NA's). The second column should be the mean bulk density value at the level of each site.
+
+(b) Then, use group_by, mutate, and if_else/case_when to fill in NA's based on the plot-level mean bulk density. After you run this, check to see how many NA's remain in your dataframe for bulk density (comment this value below the line of code)
+
+(c) Now, use the same functions as above to fill the remaining NA's based on the site-level mean bulk density. Once again, check to see how many NA's remain in your dataframe for bulk density (comment this value below the line of code).
+
+(d) If you have 0 NA's after step 4C, you're done gap filling! If you still have NA values, however, assign them to the global mean that you calculated above (global.mean.bd)
+```{r Data wrangling }
+Soil_combined_BGC_BulkDensity <- Soil_combined_BGC_BulkDensity %>%
+  group_by(plotID) %>%
+  mutate(plot_mean_bulk_density =  mean(bulkDensThirdBar, na.rm = T)) %>%
+  ungroup() %>%
+  group_by(siteID) %>%
+  mutate(site_mean_bulk_density = mean(bulkDensThirdBar, na.rm= T)) %>%
+  mutate(plot_mean_bulk_density = case_when(plot_mean_bulk_density == "NaN" ~ site_mean_bulk_density,
+                                            TRUE ~ plot_mean_bulk_density))
+ 
+table(is.na(Soil_combined_BGC_BulkDensity$plot_mean_bulk_density))
+
+```
+
+
+*Step 5*
+(a) Given bulk density and the depth of each horizon in your dataframe, create a new column in your dataframe (from the end of step 4) that is the total amount of soil in grams for a m^2 area
+- Hint: investigate the **units** of each parameter to make sure everything is consistent
+
+(b) Based on the column you created in 5a, create another new column in the dataframe that is kilograms of soil for a m^2 area.
+
+(c) Next, given soil kilograms/m^2 (from part b) and the column "carbonTot" (also in your dataframe) calculate the total *grams* of carbon in each horizon.
+- Hint: make sure to investigate the **units** of carbonTot.
+```{r Some more data wrangling}
+Soil_combined_BGC_BulkDensity <- Soil_combined_BGC_BulkDensity %>%
+  mutate(total.soil.g.m2 = plot_mean_bulk_density * 100^2 * horizon_depth,
+         total.soil.kg.m2 = total.soil.g.m2/1000,
+         carbon.per.horizon.g.m2 = carbonTot * total.soil.kg.m2)
+
+```
+
+
+*Step 6* 
+(a) Given the grams of C in each horizon (step 5c), create a new dataframe that contains the total grams of carbon per m^2 at the plot level, summed across all horizons.
+
+(b) Create a new column in the dataframe from step 6a that contains carbon estimates in Megagrams per hectare
+```{r Doing even more data wrangling}
+Total.Carbon.by.Plot <- Soil_combined_BGC_BulkDensity %>%
+  group_by(siteID, plotID) %>%
+  summarize(Total.Carbon = sum(carbon.per.horizon.g.m2)) %>%
+  mutate(Mg.C.per.Ha.per.plot = Total.Carbon/100)
+
+```
+
+```{r Saving the cleaned data} 
+write.csv(Total.Carbon.by.Plot, "Total Carbon by Site NEON data - soils.csv")
+
+```
+
+
+*Step 7* In preparation for next week's data visualization lab, make a basic boxplot (no need to customize aesthetics - this is just to look at general patterns) for your soil data. In the chunk below, below the plot code, comment in some observations about the patterns you see in this plot.
+
+Statistical Test:
+ANOVA and Tukey HSD
+```{r Statistical Analysis}
+# ANOVA
+ANOVA.NEON.soils <- aov(Mg.C.per.Ha.per.plot ~ siteID, data = Total.Carbon.by.Plot)
+summary(ANOVA.NEON.soils)
+
+# Removing the outlier from STEI just to see how it would change the outcome 
+# for the ANOVA and Tukey HSD 
+Total.Carbon.by.Plot2 <- Total.Carbon.by.Plot %>% filter(Mg.C.per.Ha.per.plot < 3000)
+ANOVA.NEON.soils2 <- aov(Mg.C.per.Ha.per.plot ~ siteID, data = Total.Carbon.by.Plot2)
+summary(ANOVA.NEON.soils2)
+
+# TUKEY HSD
+TUKEY.NEON.soils <- TukeyHSD(ANOVA.NEON.soils)
+view(TUKEY.NEON.soils)
+
+TUKEY.NEON.soils2 <- TukeyHSD(ANOVA.NEON.soils2)
+view(TUKEY.NEON.soils2)
+
+cld <- multcompLetters4(ANOVA.NEON.soils,TUKEY.NEON.soils)
+cld <- as.data.frame.list(cld$siteID)
+
+cld2 <- multcompLetters4(ANOVA.NEON.soils2,TUKEY.NEON.soils2)
+cld2 <- as.data.frame.list(cld2$siteID)
+#view(cld)
+```
+   
+
+```{r Creating significant letters}
+letters.Soil.Data <- Total.Carbon.by.Plot %>%
+  summarise(mean = mean(Mg.C.per.Ha.per.plot),
+            quant = quantile(Mg.C.per.Ha.per.plot, probs= 0.75)) %>%
+  arrange(desc(mean))
+
+letters.Soil.Data$cld <- cld$Letters
+
+# Letters for data without the STEI outlier
+letters.Soil.Data2 <- Total.Carbon.by.Plot2 %>%
+  summarise(mean = mean(Mg.C.per.Ha.per.plot),
+            quant = quantile(Mg.C.per.Ha.per.plot, probs= 0.75)) %>%
+  arrange(desc(mean))
+
+letters.Soil.Data2$cld <- cld2$Letters
+```
+
+```{r Boxplot }
+Total.Carbon.by.Plot %>%
+  ggplot(aes(x= siteID, y= Mg.C.per.Ha.per.plot)) +
+  geom_boxplot(aes(fill = siteID), outlier.shape = NA, alpha = 0.6, show.legend = F) +
+  geom_point(position = "jitter") + 
+  geom_text(data= letters.Soil.Data, aes(label= cld, x= siteID, y= quant),
+            vjust= -2, hjust= -1, size= 5, color= "gray5") +
+  scale_fill_brewer(palette = "Spectral") +
+  scale_y_continuous(breaks= seq(1000,7500,1000), limits=c(80,7500)) +
+  labs(title= "Soil C Stocks in NEON Sites:",
+       x= "Sites",
+       y= "Mg C per Ha per Plot" ) +
+  theme_bw() +
+  theme(plot.caption.position = "plot", plot.caption = element_text(hjust = 0)) +
+  annotate("segment", x = 3.9, y = 6900, xend = 3.3, yend = 6900, 
+         size = 4, linejoin = "mitre", arrow = arrow(type = "closed", length = unit(0.01, "npc"))) +
+  annotate("text", x = 3.3, y = 6850, label = "STEI_024", color = "white", hjust= -0.3, vjust= 0.1, size = 3)
+```
+
+```{r}
+Total.Carbon.by.Plot %>%
+  ggplot(aes(x= siteID, y= Mg.C.per.Ha.per.plot)) +
+  geom_boxplot(aes(fill = siteID), outlier.shape = NA, alpha = 0.6, show.legend = F) +
+  geom_point(position = "jitter") +
+  scale_y_log10(breaks=c(100,300,1000,3000,10000), limits=c(80,8000)) + 
+  scale_fill_brewer(name= "Site ID", palette = "Spectral") +
+  labs(title= "Soil C Stocks by Site:",
+       x= "C Pools",
+       y= "Mg C per Ha") +
+  annotate("segment", x = 3.9, y = 6900, xend = 3.3, yend = 6900, 
+         size = 4, linejoin = "mitre", arrow = arrow(type = "closed", length = unit(0.01, "npc"))) +
+  annotate("text", x = 3.3, y = 6700, label = "STEI_024", color = "white", hjust= -0.3, vjust= 0.1, size = 3)  +
+  geom_text(data= letters.Soil.Data, aes(label= cld, x= siteID, y= quant),
+            vjust= -2, hjust= -1, size= 5, color= "gray5", inherit.aes = F) +
+  theme(#plot.caption.position = "plot", plot.caption = element_text(hjust = 0),
+        panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  theme_bw() 
+```

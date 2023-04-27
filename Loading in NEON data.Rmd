@@ -1,0 +1,59 @@
+---
+title: "Gathering Carbon Pools Data"
+output: html_document
+---
+```{r loading libraries}
+library(neonUtilities)
+library(tidyverse)
+library(lubridate)
+```
+First you will find your data product’s unique ID.
+Go to NEONscience.org and click the dropdown menu under “Data and Samples.” Click “Data Portal”, then “Explore Data Products.”
+
+Use the search bar on the left hand side of the page to search for your data product
+i.	  Trees: “Vegetation structure”
+ii.	  Soil:  “Soil physical and chemical properties, distributed initial characterization”
+iii.	Roots: “Root biomass and chemistry, periodic"
+
+Find your data product and note the data product ID. It will begin with DP1.
+Trees: _DP1.10098.001_
+Soil:  _DP1.10047.001_
+Roots: _DP1.10067.001_
+```{r}
+soils_data <- loadByProduct(dpID="DP1.10047.001", site= c("BART", "KONZ", "STEI", "WREF"), 
+                            startdate= "2012-01", enddate= "2019-12", package= "basic")
+                                 
+roots_data <- loadByProduct(dpID="DP1.10067.001", site= c("BART", "KONZ", "STEI", "WREF"),
+                            startdate="2012-01", enddate="2019-12", package= "basic")
+
+trees_data <- loadByProduct(dpID="DP1.10098.001", site= c("BART", "KONZ", "STEI", "WREF"), 
+                            startdate= "2012-01", enddate= "2019-12", package= "basic")
+
+```
+
+List to Global Environment:
+```{r}
+list2env(soils_data, .GlobalEnv)
+list2env(roots_data, .GlobalEnv)
+list2env(trees_data, .GlobalEnv)
+
+```
+
+Making csv for the dataframes:
+```{r}
+# Soil Data
+write.csv(spc_biogeochem,  file= "soil_BioGeoChem.csv")
+write.csv(spc_particlesize,file= "soil_ParticleSize.csv")
+write.csv(spc_bulkdensity, file= "soil_BulkDensity.csv")
+write.csv(variables_10047, file= "NEON Metadata Soil.csv")
+
+# Root Data
+write.csv(bbc_percore,  file= "bbc_percore_roots.csv")
+write.csv(bbc_rootmass, file= "bbc_rootmass.csv")
+write.csv(variables_10067, file= "NEON Metadata Roots.csv")
+
+# Tree Data
+read.csv(vst_apparentindividual, file= "vst_apparentindividual.csv")
+read.csv(vst_perplotperyear, file= "vst_perplotperyear.csv")
+read.csv(variables_10098, file= "NEON Metadata Trees.csv")
+```

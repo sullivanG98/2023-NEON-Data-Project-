@@ -1,0 +1,127 @@
+---
+title: "Roots Data Analysis and Visualization"
+output: html_document
+---
+
+This R markdown file will guide you through data carpentry for the roots data. 
+
+BEFORE YOU BEGIN:
+
+1. SAVE THIS FILE to your computer! Be sure to save your work periodically.
+
+2. Set your working directory to the folder where you saved this Rmd file
+
+3. Run the following chunk, which has the packages you will need
+```{r Libraries}
+
+library(neonUtilities)
+library(tidyverse)
+library(lubridate)
+
+```
+
+*Step 1.* Read in the csv files for the roots data. These are the files that you uploaded to eLC for your pre-lab. For roots data carpentry, you need:
+
+- variables_10067: this file contains definitions for all the variables in the roots data. Reference this if you're not sure what a column name means
+- bbc_percore: this file contains core area and depth
+- bbc_rootmass: this file contains root size category, status (live/dead), and dry mass
+```{r Bringing the Variables}
+variables_10067 <- read.csv("bbc_percore_roots.csv")
+bbc_percore <- read.csv("bbc_rootmass.csv")
+bbc_rootmass <- read.csv("NEON Metadata Roots.csv")
+
+```
+
+*Step 2* 
+(a) Select variables of interest from both bbc_percore and bbc_rootmass. 
+
+- For bbc_rootmass, you will need the following columns: domainID, siteID, plotID, sampleID, subsampleID, collectDate, sizeCategory, rootStatus, dryMass
+
+- For bbc_percore, you will need the following columns: domainID, siteID, plotID, subplotID, sampleID, clipID, coreID, collectDate, rootSampleArea, rootSampleDepth, coreDiameter
+
+(b) Join the subsetted dataframes from (a). You want to retain all of the observations from bbc_rootmass, filling in the corresponding sampling area values from bbc_percore. If you need help remembering what type of join to use, refer to the lab 7 slides!
+
+(c) Add a column to the roots dataframe that is just the sampling *year* according to collectDate
+```{r Selecting and generating variables}
+rootmass_rev <- bbc_rootmass %>%  
+  select(domainID,  siteID, plotID, sampleID, subsampleID, collectDate, 
+         sizeCategory, rootStatus, dryMass)
+
+bbc_percore_rev <- bbc_percore %>%  
+  select(domainID,  siteID, plotID, sampleID, subplotID, clipID, coreID, 
+         rootSampleArea, rootSampleDepth, coreDiameter, collectDate)
+
+mass_bbcpercore <- left_join( rootmass_rev, bbc_percore_rev)
+
+mass_core_rev <- mass_bbcpercore %>% mutate(year=year(collectDate))
+
+```
+
+*Step 3* Root calculations
+
+(a) Create a new dataframe in which you sum root mass at the level of each sample. Here, you will sum all root size classes and alive/dead roots. This is because sorting roots by live/dead status stopped in 2019. Thus we will just assess all "root mass" instead of calling it "biomass"
+
+(b) Create a new column in the dataframe from (a) that is grams of carbon in each root sample (check units of dry mass, first!) based on the assumption that root mass is 47% C.
+
+(c) Create a new column in the dataframe that is grams of carbon in each root sample *per meter squared* based on the root sample area given (check units!)
+
+(d) Create a new column in the dataframe based on the column in part (c) that is the Megagrams of carbon per hectare at the level of each sample
+
+(e) Summarize the data from part (d) by creating a new dataframe that has estimates of root C in Mg/ha at the *plot* level.
+```{r Data Wrangling }
+
+rootmass_sample <- mass_core_rev %>% group_by(domainID, siteID, plotID, sampleID, collectDate,rootSampleArea,rootSampleDepth) %>% summarise(rootmass = (sum(dryMass)))
+
+rootmass_sample <- rootmass_sample %>% mutate(total_C = rootmass*.47)
+
+rootmass_sample <- rootmass_sample %>% mutate(total_C_m2 = (rootmass*.47)/rootSampleArea)
+
+rootmass_sample <- rootmass_sample %>% mutate(total_C_Mg_ha = total_C_m2 / 100)
+
+rootmass_final <- rootmass_sample %>% group_by(domainID, siteID, plotID) %>% summarise(C_Mg_ha = (sum(total_C_Mg_ha)))
+
+```
+
+```{r Saving the cleaned data}
+write.csv(rootmass_final, "Total Root by NEON Site.csv")
+```
+
+
+*Step 4* In preparation for next week's data visualization lab, make a basic boxplot (no need to customize aesthetics - this is just to look at general patterns) for your roots data. In the chunk below, below the plot code, comment in some observations about the patterns you see in this plot.
+
+Statistical Test:
+ANOVA and Tukey HSD
+```{r Statistical Analysis}
+anova <- aov(C_Mg_ha~siteID, data=rootmass_final)
+summary(anova)
+tukey <- TukeyHSD(anova)
+
+cld <- multcompLetters4(anova,tukey)
+
+Tk <- group_by(rootmass_final, siteID) %>% 
+  summarise(mean=mean(C_Mg_ha),quant=quantile(C_Mg_ha, probs=0.75)) %>% 
+  arrange(desc(mean))
+
+cld <- as.data.frame.list(cld$siteID)
+Tk$cld <- cld$Letters
+
+
+```
+
+```{r Boxplot}
+rootmass_final %>%
+  ggplot(., aes(x=siteID, y=C_Mg_ha, fill= siteID)) +
+  geom_boxplot(outlier.shape = NA, position= position_dodge(width=1), alpha = 0.6) + 
+  geom_point(aes(group = siteID), size = 0.5, 
+             position=position_jitterdodge(dodge.width= 1, jitter.width= 0.1)) +
+  labs(title="Root Carbon Pools Across Ecosystems",
+       x="Sample Site",
+       y="Carbon Stored in Roots (Mg C/ha)") + 
+  theme(axis.title.y = element_text(size=9)) + theme_bw() + 
+  geom_text(data=Tk, aes(label=cld, x=siteID,y=quant),vjust=-2,hjust=-2,size=5) +
+  scale_fill_brewer(name= "Site ID", palette = "Spectral")
+
+```
+
+
+

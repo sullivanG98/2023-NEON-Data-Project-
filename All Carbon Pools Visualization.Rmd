@@ -1,0 +1,118 @@
+---
+title: "All Carbon Pools Visualization"
+output: html_document
+---
+
+```{r libraries}
+library(tidyverse)
+library(multcompView)
+library(RColorBrewer)
+library(ggrepel)
+```
+
+```{r data}
+soils <- read_csv("Total Carbon by Site NEON data - soils.csv")
+trees <- read_csv("Tree Carbon by NEON Site.csv")
+roots <- read_csv("Total Root by NEON Site.csv")
+```
+
+You will need to make sure all you column names are the same to ensure they join correctly
+
+```{r cleaning the data}
+soils <- soils %>% select(-c(...1, Total.Carbon)) %>%
+  mutate(Mg.C.ha = Mg.C.per.Ha.per.plot, pools = "Soils") %>%
+  select(-(Mg.C.per.Ha.per.plot))
+
+trees <- trees %>% 
+  select(-c(...1, totalSampledAreaTrees, plot.abg.biomass.kg.m2, plot.abg.biomass)) %>%
+  mutate(Mg.C.ha = plot.abg.biomass.Mg.ha*0.47, pools = "Trees") %>% 
+  select(-(plot.abg.biomass.Mg.ha))
+
+roots <- roots %>% select(-...1) %>%
+  mutate(Mg.C.ha = C_Mg_ha, pools = "Roots") %>%
+  select(-(C_Mg_ha))
+
+```
+
+
+```{r binding all dataframes}
+all.data.sites.pools <- bind_rows(soils,trees,roots) %>%
+  group_by(siteID)
+
+write_csv(all.data.sites.pools, "all data site for the pools.csv")
+```
+
+
+```{r statistical tests}
+# ANOVA
+ANOVA.NEON.pools <- aov(Mg.C.ha ~ pools * siteID, data = all.data.sites.pools)
+summary(ANOVA.NEON.pools)
+
+# TUKEY HSD
+TUKEY.NEON.pools <- TukeyHSD(ANOVA.NEON.pools)
+TUKEY.NEON.pools
+
+cld <- multcompLetters4(ANOVA.NEON.pools,TUKEY.NEON.pools)
+cld.1 <- as.data.frame.list(cld$pools)
+
+```
+
+```{r adding letter for statistical differences}
+letters.NEON.Data <- all.data.sites.pools %>%
+  group_by(pools) %>%
+  summarise(mean = mean(Mg.C.ha),
+            sd = sd(Mg.C.ha),
+            quant = quantile(Mg.C.ha, probs= 0.75)) %>%
+  arrange(desc(mean))
+letters.NEON.Data$cld <- cld.1$Letters
+
+```
+
+```{r boxplot}
+# "unadjusted y-axis"
+all.data.sites.pools %>%
+  ggplot(aes(x= factor(pools), y= Mg.C.ha, fill= siteID)) +
+  geom_boxplot(outlier.shape = NA, position = position_dodge(width=1), alpha = 0.6) +
+  geom_point(aes(group = siteID), size= 0.5, 
+             position= position_jitterdodge(dodge.width= 1, jitter.width= 0.08)) +
+  scale_fill_brewer(name= "Site ID", palette = "Spectral") +
+  labs(title= "All Sites C Stocks by Pools:",
+       x= "C Pools",
+       y= "Mg C per Ha") +
+  annotate("segment", x = 2.7, y = 6900, xend = 2.3, yend = 6900, 
+         size = 4, linejoin = "mitre", arrow = arrow(type = "closed", length = unit(0.01, "npc"))) +
+  annotate("text", x = 2.3, y = 6850, label = "STEI_024", color = "white", hjust= -0.3, vjust= 0.1, size = 3)  +
+  geom_text(data= letters.NEON.Data, aes(label= cld, x= pools, y= quant, group=pools),
+               size= 5, vjust= -0.8, hjust= -0.5, color= "gray25", inherit.aes = F) +
+  theme(#plot.caption.position = "plot", plot.caption = element_text(hjust = 0),
+        panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  theme_bw() 
+
+```
+```{r}
+# "unadjusted y-axis"
+all.data.sites.pools %>%
+  ggplot(aes(x= factor(pools), y= Mg.C.ha, fill= siteID)) +
+  geom_boxplot(outlier.shape = NA, position = position_dodge(width=1), alpha = 0.6) +
+  geom_point(aes(group = siteID), size= 0.5, 
+             position= position_jitterdodge(dodge.width= 1, jitter.width= 0.08)) +
+  scale_y_log10(n.breaks= 7, labels = scales::trans_format("log10", scales::math_format(10^.x))) + 
+  geom_hline(yintercept = 1, linetype="dashed", color = "black") +
+  scale_fill_brewer(name= "Site ID", palette = "Spectral") +
+  labs(title= "All Sites C Stocks by Pools:",
+       x= "C Pools",
+       y= "Mg C per Ha") +
+  annotate("segment", x = 2.9, y = 6900, xend = 2.3, yend = 6900, 
+         size = 4, linejoin = "mitre", arrow = arrow(type = "closed", length = unit(0.01, "npc"))) +
+  annotate("text", x = 2.3, y = 6850, label = "STEI_024", color = "white", hjust= -0.3, vjust= 0.1, size = 3)  +
+  geom_text(data= letters.NEON.Data, aes(label= cld, x= pools, y= quant, group=pools),
+               size= 5, vjust= -0.8, hjust= -0.5, color= "gray25", inherit.aes = F) +
+  theme(#plot.caption.position = "plot", plot.caption = element_text(hjust = 0),
+        panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  theme_bw() 
+```
+
+
+```{r}
+#save.image("NEON Project, all pools and sites.Rdata")
+```
